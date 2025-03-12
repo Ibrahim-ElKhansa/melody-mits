@@ -63,6 +63,7 @@ class MidiHandler:
         if not self.midi_out:
             return
         try:
+            bend_value = max(-8192, min(8191, bend_value))
             msg = mido.Message('pitchwheel', pitch=bend_value)
             self.midi_out.send(msg)
         except Exception as e:

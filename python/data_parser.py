@@ -20,6 +20,10 @@ def parse_line_to_dict(line: str) -> dict:
     into a dictionary:
         {"F1": 0, "P1": 1, "AccX": 0.4, "GyrZ": -0.2}
     """
+    print(line)
+    
+    with open('percussion.txt', 'a') as file:
+        file.write(line + '\n')
     data_dict = {}
     # Split by commas
     parts = line.split(',')
