@@ -1,5 +1,3 @@
-# midi_handler.py
-
 import mido
 
 class MidiHandler:
@@ -7,9 +5,11 @@ class MidiHandler:
         """
         default_velocity is an integer between 0-127 (standard MIDI velocity range).
         """
+        print(mido.get_output_names())
+        
         self.default_velocity = default_velocity
         try:
-            self.midi_out = mido.open_output()  # Adjust your MIDI port as needed
+            self.midi_out = mido.open_output("MelodyMitz 1")  # Adjust your MIDI port as needed
         except Exception as e:
             print("MIDI initialization failed:", e)
             self.midi_out = None
@@ -53,18 +53,3 @@ class MidiHandler:
             self.midi_out.send(msg)
         except Exception as e:
             print("MIDI send error (control_change):", e)
-
-    def send_pitch_bend(self, bend_value: int):
-        """
-        Sends a pitch bend. bend_value is typically in the range -8192 to +8191,
-        but mido will do some range adjustment for you if you pass an int 0..16383.
-        8192 is neutral (no bend).
-        """
-        if not self.midi_out:
-            return
-        try:
-            bend_value = max(-8192, min(8191, bend_value))
-            msg = mido.Message('pitchwheel', pitch=bend_value)
-            self.midi_out.send(msg)
-        except Exception as e:
-            print("MIDI send error (pitchbend):", e)
