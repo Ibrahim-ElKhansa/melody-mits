@@ -1,3 +1,4 @@
+# serial_receiver.py
 import serial
 import time
 import threading
@@ -16,75 +17,71 @@ NOTE_NAME_TO_MIDI = {
 }
 
 def note_name_to_midi(note_name: str):
-    """
-    Utility function to convert the note name from the UI to a MIDI note number.
-    Returns None if note_name is "None" or not found in the map.
-    """
     return NOTE_NAME_TO_MIDI.get(note_name, None)
 
 class SerialReceiver:
-    def __init__(self, port="COM4", baud_rate=115200, config_dict=None):
+    def __init__(self, port="COM4", baud_rate=115200, config_dict=None, glove_name="Glove 1", midi_handler=None):
         """
-        :param port: Serial port name (e.g. "COM4")
-        :param baud_rate: e.g. 115200
-        :param config_dict: A shared dictionary from the UI with user-defined mappings,
-                            e.g. config_dict["P1"] = "C3", config_dict["F1"] = "14", etc.
+        :param port: Serial port (e.g., "COM4")
+        :param baud_rate: baud rate (e.g., 115200)
+        :param config_dict: Shared sensor configuration dictionary.
+        :param glove_name: Identifier for the glove (used in logging).
+        :param midi_handler: Shared MidiHandler instance; if None, a new one is created.
         """
+        self.glove_name = glove_name
         self.config_dict = config_dict if config_dict else {}
         self.running = True
-        self.midi_handler = MidiHandler(default_velocity=100)
+        
+        # Use the shared MidiHandler if provided.
+        if midi_handler is not None:
+            self.midi_handler = midi_handler
+        else:
+            self.midi_handler = MidiHandler(default_velocity=100)
         
         self.simulate_file = False
         script_dir = os.path.dirname(os.path.realpath(__file__))
         file_name = "fingers.txt"
         self.file_path = os.path.join(script_dir, file_name)
         
-        # Keep track of notes currently playing from pressure sensors
         self.current_notes = {}
 
         if not self.simulate_file:
             try:
                 self.ser = serial.Serial(port, baud_rate, timeout=1)
-                print(f"Connected to {port} at {baud_rate} baud.")
+                print(f"[{self.glove_name}] Connected to {port} at {baud_rate} baud.")
             except Exception as e:
-                print(f"Error opening serial port {port}: {e}")
+                print(f"[{self.glove_name}] Error opening serial port {port}: {e}")
                 raise e
 
-            time.sleep(2)  # Wait for the connection to stabilize
+            time.sleep(2)
             self.thread = threading.Thread(target=self.serial_loop, daemon=True)
             self.thread.start()
         else:
             try:
                 self.file = open(self.file_path, "r")
-                print(f"Simulating input from file: {self.file_path}")
+                print(f"[{self.glove_name}] Simulating input from file: {self.file_path}")
             except Exception as e:
-                print(f"Error opening file {self.file_path}: {e}")
+                print(f"[{self.glove_name}] Error opening file {self.file_path}: {e}")
                 raise e
 
             self.lines = self.file.readlines()
             if not self.lines:
-                print(f"No data found in {self.file_path}!")
+                print(f"[{self.glove_name}] No data found in {self.file_path}!")
                 self.lines = []
             self.file.close()
             self.thread = threading.Thread(target=self.file_loop, daemon=True)
             self.thread.start()
 
     def serial_loop(self):
-        """
-        Continuously reads lines from the serial port and processes them.
-        Expected data format (examples):
-            "F1:0,P1:1,AccX:0.4,AccY:-0.2,GyrZ:0.3"
-            "F2:1,F3:0,P3:0.8,AccZ:1.2,GyrX:0.1"
-        """
         while self.running:
             try:
                 line = self.ser.readline().decode('utf-8').strip()
-                print(line)
+                print(f"[{self.glove_name}] {line}")
                 if line:
                     data_dict = parse_line_to_dict(line)
                     self.process_data(data_dict)
             except Exception as e:
-                print("Serial read error:", e)
+                print(f"[{self.glove_name}] Serial read error: {e}")
                 
     def file_loop(self):
         index = 0
@@ -92,31 +89,19 @@ class SerialReceiver:
             line = self.lines[index].strip()
             if line:
                 data_dict = parse_line_to_dict(line)
-                print(data_dict)
+                print(f"[{self.glove_name} File] {data_dict}")
                 self.process_data(data_dict)
             index += 1
             time.sleep(0.1)
 
     def process_data(self, data_dict: dict):
-        """
-        Process sensor data according to user-defined mappings.
-        Pressure sensors (P1-P4) are mapped to MIDI notes.
-        All other sensors (F1-F4, AccX,AccY,AccZ, GyrX,GyrY,GyrZ) are mapped to continuous controllers.
-        For continuous controllers, the raw sensor value is mapped from its expected range to 0-127 with 0 mapping to 64.
-        Expected raw ranges:
-            Flex (F1-F4): -2 to 2
-            Accelerometers (AccX,AccY,AccZ): -2 to 2
-            Gyroscopes (GyrX,GyrY,GyrZ): -500 to 500
-        """
-        # Process Pressure Sensors as notes
+        # Process pressure sensors (P1-P4)
         for sensor in ["P1", "P2", "P3", "P4"]:
             raw_value = data_dict.get(sensor, 0)
             chosen_note_name = self.config_dict.get(sensor, "None")
             midi_note = note_name_to_midi(chosen_note_name)
-            
-            # Determine on/off state: treat nonzero raw value as note ON
             is_on = bool(raw_value)
-            currently_playing = (sensor in self.current_notes)
+            currently_playing = sensor in self.current_notes
             
             if is_on and midi_note and not currently_playing:
                 self.midi_handler.send_midi_note_on(midi_note)
@@ -137,8 +122,6 @@ class SerialReceiver:
             except ValueError:
                 continue
             raw_val = data_dict.get(sensor, 0.0)
-            
-            # Determine expected range based on sensor type
             if sensor.startswith("F"):
                 R = 2.0
             elif sensor.startswith("Acc"):
@@ -147,20 +130,13 @@ class SerialReceiver:
                 R = 500.0
             else:
                 R = 1.0
-            
-            # Map raw_val from [-R, R] to 0-127, with 0 mapping to 64.
-            # For example: raw 0 --> ((0+R)/(2R))*127 = 0.5*127 ≈ 63.5 (rounded to 64)
             mapped_val = int(((raw_val + R) / (2 * R)) * 127)
             mapped_val = max(0, min(127, mapped_val))
-            
             self.midi_handler.send_midi_control_change(controller=cc_number, value=mapped_val)
 
     def stop(self):
-        """
-        Cleanly stop reading and close the serial port.
-        """
         self.running = False
         try:
             self.ser.close()
         except Exception as e:
-            print("Error closing serial port:", e)
+            print(f"[{self.glove_name}] Error closing serial port:", e)

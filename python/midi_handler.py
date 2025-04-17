@@ -25,6 +25,7 @@ class MidiHandler:
         try:
             msg = mido.Message('note_on', note=note, velocity=velocity)
             self.midi_out.send(msg)
+            print("SINGAL SENT")
         except Exception as e:
             print("MIDI send error (note_on):", e)
 
