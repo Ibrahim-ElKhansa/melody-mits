@@ -6,10 +6,12 @@ class MidiHandler:
         default_velocity is an integer between 0-127 (standard MIDI velocity range).
         """
         print(mido.get_output_names())
+        ports = mido.get_output_names()
+        print("Available ports:", ports)
         
         self.default_velocity = default_velocity
         try:
-            self.midi_out = mido.open_output("MelodyMitz 1")  # Adjust your MIDI port as needed
+            self.midi_out = mido.open_output("ESI MIDIMATE eX 2")  # Adjust your MIDI port as needed
         except Exception as e:
             print("MIDI initialization failed:", e)
             self.midi_out = None
